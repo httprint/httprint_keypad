@@ -1,0 +1,5 @@
+RPLCD
+pad4pi
+RPi.GPIO
+requests
+configparser

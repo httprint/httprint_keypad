@@ -1,0 +1,3 @@
+#!/bin/bash
+lpstat -o
+
