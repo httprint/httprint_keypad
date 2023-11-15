@@ -19,6 +19,7 @@ import time
 import os
 import subprocess
 import logging
+import json
 
 from RPLCD.i2c import CharLCD
 from pad4pi import rpi_gpio
@@ -233,9 +234,10 @@ def searchprint(code, ppdstd, ps):
 
     logging.info ("Searching " + code)
     display("Searching...", "")
-    url = "https://" + SERVER +"/api/infotest/" + code + "?token=" + TOKEN
+
+    url = f"{SERVER}/api/download/{code}?token={TOKEN}"
     if ps:
-        url = url + "&ppdstd=" + ppdstd
+        url = f"{url}&ppdstd={ppdstd}"
 
     try:
         response = requests.get(url, timeout=5)
@@ -244,26 +246,32 @@ def searchprint(code, ppdstd, ps):
         play("fail")
         display("Error", "No server")
         return()
-    
 
-    jsonResponse = response.json()
-    if jsonResponse["error"]:
-         logging.error ("Error" + jsonResponse["message"])
-         play("fail")
-         display("Error", jsonResponse["message"])
-         return()
-    
-    minfo = jsonResponse["message"]["info"]
-    fname = minfo.get("filename","")
-    name = minfo.get("name",fname.replace(code + "-",""))
-    copies = minfo.get("copies", 1)
-    sides = minfo.get("sides", "two-sided-long-edge")
-    media = minfo.get("media", "A4")
-    color = minfo.get("color", False) #still not implemented
+    if 'application/json' in response.headers.get('Content-Type', ''):
+        jsonResponse = response.json()
+        if jsonResponse["error"]:
+            logging.error ("Error" + jsonResponse["message"])
+            play("fail")
+            display("Error", jsonResponse["message"])
+            return()
 
+    elif not 'application/octet-stream' in response.headers.get('Content-Type', ''):
+        play("fail")
+        display("Error", "Bad header")
+        return()
+
+    fname = response.headers['Content-Disposition'].split("filename=")[1]
     tfname = os.path.join(TMP, fname)
     with open(tfname, 'wb') as f:
-        f.write(base64.decodebytes(jsonResponse["message"]["data"].encode('utf-8')))
+        f.write(response.content)
+    printconf = json.loads(response.headers['Printconf'])
+
+    fname = printconf.get("filename","")
+    name = printconf.get("name",fname.replace(code + "-",""))
+    copies = printconf.get("copies", 1)
+    sides = printconf.get("sides", "two-sided-long-edge")
+    media = printconf.get("media", "A4")
+    color = printconf.get("color", False) #still not implemented
 
     logging.info ("Printing " + tfname)
     play("print")

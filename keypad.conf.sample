@@ -1,6 +1,6 @@
 [MAIN]
 devicename = keypad1
-server = your.server.org
+server = https://your.server.org
 token = token1
 prespool = false
 
