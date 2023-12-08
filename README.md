@@ -31,7 +31,7 @@ Clone this repo
 
 Copy keypad.conf.sample to keypad.conf and change settings (pay attentention to i2c port and address)
 
-Sounds are [here](https://cloud.cristo.re/s/jfRFeHYKM3pcLPi), copy all files into "sounds" folder
+To have sounds, copy all [files](https://cloud.cristo.re/s/jfRFeHYKM3pcLPi) into "sounds" folder and install mpg123
 
 Run keypad.py, or create a service to run it at startup
 
