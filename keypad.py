@@ -18,6 +18,7 @@ limitations under the License.
 import time
 import os
 import subprocess
+from subprocess import DEVNULL
 import logging
 import json
 
@@ -26,17 +27,16 @@ from pad4pi import rpi_gpio
 import RPi.GPIO as GPIO
 
 import requests
-import base64
 import configparser
 import tempfile
 
 TMP = tempfile.gettempdir()
 
 
-CODE_DIGITS = 6
+CODE_DIGITS = 4
 temp_digits = 0
 
-PRINT_CMD = "lp -n %(copies)s -o sides=%(sides)s -o media=%(media)s %(in)s"
+PRINT_CMD = "lp -n %(copies)s -o sides=%(sides)s -o media=%(media)s %(colormodel)s -o fit-to-page %(in)s"
 PRINTRAW_CMD = "lp -o raw %(in)s"
 
 
@@ -50,6 +50,8 @@ SERVER = confmain.get('server','')
 TOKEN = confmain.get('token','')
 ps = confmain.get('prespool','false')
 PRESPOOL = ps.lower() in ['true', '1', 'y', 'yes']
+INSTANCENAME = "HTTPRINT"
+colors = []
 
 conflcd = config['LCD']
 LCD_I2C_EXPANDER = conflcd.get('i2c_expander','PCF8574')
@@ -81,6 +83,20 @@ def main():
     logging.basicConfig(filename=logfname, datefmt='%m/%d/%Y %H:%M:%S', format='%(asctime)s %(levelname)s: %(message)s', level=logging.INFO)
     logging.getLogger().addHandler(logging.StreamHandler())
 
+    url = f"{SERVER}/api/serverinfo"
+    try:
+        response = requests.get(url, timeout=5)
+    except requests.exceptions.RequestException as e:
+        logging.error("Server connection error")
+        play("fail")
+        display("Error", "No server")
+        return()
+    
+    message = response.json().get("message")
+    INSTANCENAME = message.get("instance-name")
+    CODE_DIGITS = message.get("code-digits")
+
+
     play("start")
     logging.info("start")
     logging.info("DEVICENAME: " + DEVICENAME)
@@ -110,6 +126,21 @@ def main():
     # GPIO.setup(24, GPIO.OUT)
     # GPIO.output(24, 1)
 
+    #search color capabilities
+    global colors
+    try:
+        col = subprocess.check_output("lpoptions -l | grep ColorModel", shell=True).decode("utf-8").strip()
+        col = col.split(":")[1]
+        col = col.replace("*","").strip().split(" ")
+        if len(col) == 1:
+            colors = [col[0], col[0]]
+        elif len(col) == 2:
+            colgray = [i for i in col if i.lower() in ["gray","grayscale"]][0]
+            colcol = [i for i in col if i != colgray][0]
+            colors = [colgray, colcol]
+    except:
+        pass
+    
     code = ""
     global key_lookup
     key_lookup = ""
@@ -129,25 +160,26 @@ def main():
         time.sleep(0.05)
 
         if resetdisplay == True and time.time() > displaytime:
-            displaycode(code)
             temp_digits = CODE_DIGITS
             resetdisplay = False
+            displaycode(code)
 
         if code != '':
             if time.time() > keytime + 3:
                 code = ''
                 #keytime = time.time()
-                logging.debug ("Resettato")
+                logging.debug ("Reset")
                 play("reset")
                 displaycode(code)
 
 
         if key_lookup != "":
+            # print(key_lookup)
             keytime = time.time()
             if(key_lookup == "D"):
                 code = ''
                 temp_digits = CODE_DIGITS
-                logging.debug ("reset")
+                logging.debug ("Reset")
                 play("reset")
                 displaycode(code)
             # elif(key_lookup == "C"): #Used to delete one char
@@ -161,10 +193,10 @@ def main():
                 if code == "ACA": # ACAB easter egg
                     temp_digits = 4
                 if code == "*99": # clean queue, only for service
-                    os.system("cancel -a -x 2>&1 &")
+                    subprocess.call("cancel -a -x", shell=True)
                     code = ''
                     logging.debug ("Queue cleaned")
-                    play("reset")
+                    play("print")
 
                 displaycode(code)
 
@@ -224,7 +256,7 @@ def formatcode(code):
 def play(file):
     file = os.path.join("sounds", file + ".mp3")
     if os.path.isfile(file):
-        os.system("mpg123 "+ file +" > /dev/null 2>&1 &")
+        subprocess.Popen("mpg123 "+ file, shell=True, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
 
 def printKey(key):
     global key_lookup
@@ -271,7 +303,12 @@ def searchprint(code, ppdstd, ps):
     copies = printconf.get("copies", 1)
     sides = printconf.get("sides", "two-sided-long-edge")
     media = printconf.get("media", "A4")
-    color = printconf.get("color", False) #still not implemented
+    color = strbool(printconf.get("color", False))
+
+    colormodel = ""
+    if colors:
+        colormodel = colors[0] if not color else colors[1]
+        colormodel = "-o ColorModel=" + colormodel
 
     logging.info ("Printing " + tfname)
     play("print")
@@ -283,15 +320,17 @@ def searchprint(code, ppdstd, ps):
         cmd = [x % {'in': tfname} for x in cmd]
     else:
         cmd = PRINT_CMD.split(' ')
-        cmd = [x % {'in': tfname, 'copies': copies, 'sides': sides, 'media': media} for x in cmd]
+        cmd = [x % {'in': tfname, 'copies': copies, 'sides': sides, 'media': media, 'colormodel': colormodel} for x in cmd]
 
     cmd = " ".join(cmd)
 
     logging.debug(cmd)
-    os.system(cmd)
+    subprocess.call(cmd, shell=True, stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
     os.remove(tfname)
 
 
+def strbool(s):
+    return s.lower() in ('true', '1', 't', 'y', 'yes')
 
 
 
