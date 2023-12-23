@@ -308,8 +308,7 @@ def searchprint(code, ppdstd, ps):
         f.write(response.content)
     printconf = json.loads(response.headers['Printconf'])
 
-    fname = printconf.get("filename","")
-    name = printconf.get("name",fname.replace(code + "-",""))
+    name = printconf.get("name",os.path.splitext(fname.replace(code + "-",""))[0])
     copies = printconf.get("copies", 1)
     sides = printconf.get("sides", "two-sided-long-edge")
     media = printconf.get("media", "A4")
